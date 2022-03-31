@@ -221,12 +221,84 @@ fn parse_knobs(mut input: syn::ItemFn, is_test: bool, config: FinalConfig) -> To
     let body = &input.block;
     input.block = syn::parse2(quote_spanned! {last_stmt_end_span=>
         {
+            let command = ::commander::Commander::new()
+            .usage_desc("Forever Write by Rust")
+            .option("-ff, --fromforever [value]", "fromforever ", Some(false))
+            .option_str("-fm, --monitor [value]", "monitor file change for update", None)
+            .helps(vec!["fh".to_string(), "forever-help".to_string()])
+            .versions(vec!["fv".to_string(), "forever-version".to_string()])
+            .after_desc("\n\n Forever run in rust\n\n")
+            .parse_env_or_exit();
+
+            let args = env::args();
+            let mut list = command.get_all_args();
+            
+            println!("command.get_exec() == {:?}", command.get_exec());
+            println!("command.get_all_args() == {:?}", command.get_all_args());
+
+            println!("111 == {:?}", command.get("fromforever"));
+            let ssss = format!("command.get_exec() == {:?} command.get_all_args() == {:?}", command.get_exec(), command.get_all_args());
+            
+            if !command.get("fromforever").unwrap_or(false) {
+                list.push("--fromforever".to_string());
+                loop {
+                    let mut now = ::std::time::SystemTime::now();
+                    let mut child = if cfg!(target_os = "windows") {
+                        Command::new(command.get_exec().unwrap())
+                                .args(list.clone())
+                                .stdin(Stdio::null())
+                                .stdout(Stdio::inherit())
+                                .spawn()
+                                .expect("failed to execute process")
+                    } else {
+                        Command::new(command.get_exec().unwrap())
+                                .args(list.clone())
+                                .stdin(Stdio::null())
+                                .stdout(Stdio::inherit())
+                                .spawn()
+                                .expect("failed to execute process")
+                    };
+                    println!("hello = {:?}", child);
+                    println!("args = {:?}", list);
+                    
+                    loop {
+                        
+                        match child.try_wait() {
+                            Ok(Some(status)) => {println!("exited with: {}", status);break;},
+                            Ok(None) => {
+                                println!("status not ready yet, let's really wait");
+                            }
+                            Err(e) => {println!("error attempting to wait: {}", e); break;},
+                        }
+                        ::std::thread::sleep_ms(1000);
+                        if let Some(file) = command.get_str("monitor") {
+                            // println!("ffffffffffff {:?}", ::std::fs::metadata(file));
+                            if let Some(metadata) = ::std::fs::metadata(file).ok() {
+                                println!("metadata == {:?}", metadata);
+                                if let Ok(time) = metadata.modified() {
+                                    let result = time.cmp(&now);
+                                    println!("time === {:?} now == {:?}", time, now);
+                                    println!("result === {:?}", result);
+                                    if result == ::std::cmp::Ordering::Greater {
+                                        child.kill();
+                                        println!("killed!!!!!");
+                                        break;
+                                    }
+                                }
+                            }
+                            println!("aaaaaaaaaa");
+                        } 
+                    }
+                }
+            }
+
             eprintln!("------?????????????---------- {:?}", #worker_threads);
             #body
         }
     }).expect("Parsing failure");
 
     let result = quote! {
+        use std::io::prelude::*;
         #input
     };
     println!("result == {:?}", result);
