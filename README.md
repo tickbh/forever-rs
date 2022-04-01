@@ -3,7 +3,7 @@ rust守护进程, 轻松实现守护
 ## Cargo.toml dependencies
 ```
 [dependencies]
-forever-rs = { version = "0.16" }
+forever-rs = { version = "0.1.0" }
 ```
 
 ## example 
