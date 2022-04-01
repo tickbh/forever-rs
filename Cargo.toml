@@ -7,7 +7,7 @@ description = "The complete solution for Rust command-line interfaces"
 repository = "https://github.com/tickbh/Commander"
 homepage = "https://github.com/tickbh/Commander"
 license = "MIT/Apache-2.0"
-keywords = ["forever", "forever rs"]
+keywords = ["forever", "forever-rs"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
