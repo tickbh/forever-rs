@@ -2,6 +2,12 @@
 name = "forever-rs"
 version = "0.1.0"
 edition = "2021"
+authors = ["tickbh <tickdream125@hotmail.com>"]
+description = "The complete solution for Rust command-line interfaces"
+repository = "https://github.com/tickbh/Commander"
+homepage = "https://github.com/tickbh/Commander"
+license = "MIT/Apache-2.0"
+keywords = ["forever", "forever rs"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]

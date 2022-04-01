@@ -191,20 +191,6 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
     let monitor_file_name = config.monitor_file.unwrap_or(String::new());
     let body = &input.block;
     
-    let (tail_return, tail_semicolon) = match body.stmts.last() {
-        Some(syn::Stmt::Semi(syn::Expr::Return(_), _)) => (quote! { return }, quote! { ; }),
-        Some(syn::Stmt::Semi(..)) | Some(syn::Stmt::Local(..)) | None => {
-            match &input.sig.output {
-                syn::ReturnType::Type(_, ty) if matches!(&**ty, syn::Type::Tuple(ty) if ty.elems.is_empty()) =>
-                {
-                    (quote! {}, quote! { ; }) // unit
-                }
-                syn::ReturnType::Default => (quote! {}, quote! { ; }), // unit
-                syn::ReturnType::Type(..) => (quote! {}, quote! {}),   // ! or another
-            }
-        }
-        _ => (quote! {}, quote! {}),
-    };
 
     input.block = syn::parse2(quote_spanned! {last_stmt_end_span=>
         {   
@@ -233,7 +219,7 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
                             break
                         }
     
-                        let mut now = ::std::time::SystemTime::now();
+                        let now = ::std::time::SystemTime::now();
                         let mut child = if cfg!(target_os = "windows") {
                             ::std::process::Command::new(command.get_exec().unwrap())
                                     .args(list.clone())
@@ -250,24 +236,20 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
                                     .expect("failed to execute process")
                         };
     
-                        
                         loop {
-                            
                             match child.try_wait() {
                                 Ok(Some(status)) => {println!("exited with: {}", status);break;},
                                 Ok(None) => {
-                                    println!("status not ready yet, let's really wait");
                                 }
                                 Err(e) => {println!("error attempting to wait: {}", e); break;},
                             }
                             ::std::thread::sleep(::std::time::Duration::from_millis(1000));
                             if monitor_file != String::new() {
                                 if let Some(metadata) = ::std::fs::metadata(&monitor_file).ok() {
-                                    println!("metadata == {:?}", metadata);
                                     if let Ok(time) = metadata.modified() {
                                         let result = time.cmp(&now);
                                         if result == ::std::cmp::Ordering::Greater {
-                                            child.kill();
+                                            child.kill().ok();
                                             break;
                                         }
                                     }
@@ -279,11 +261,7 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
                 }
             }
 
-            let _body = {
-                #body
-            }
-            // #[allow(clippy::expect_used)]
-            #tail_return #tail_semicolon
+            #body
         }
     }).expect("Parsing failure");
 
