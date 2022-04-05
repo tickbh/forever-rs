@@ -6,8 +6,12 @@
 // use std::fs::File;
 // use std::io::prelude::*;
 
-#[forever_rs::main(monitor_file="Cargo.lock", max_times=6, daemon=true, pid_file="pid")]
+#[forever_rs::main(monitor_file="Cargo.lock", max_times=6, daemon=true, pid_file="forever.pid")]
 fn main() {
     println!("Hello, world!");
+
+    loop {
+        ::std::thread::sleep(::std::time::Duration::from_millis(1000));
+    }
 }
 

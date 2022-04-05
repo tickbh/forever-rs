@@ -14,6 +14,7 @@ struct FinalConfig {
     reload_max_times: Option<usize>,
     monitor_file: Option<String>,
     pid_file: Option<String>,
+    cpid_file: Option<String>,
     log_file: Option<String>,
     error_file: Option<String>,
     is_daemon: Option<bool>,
@@ -23,6 +24,7 @@ const DEFAULT_ERROR_CONFIG: FinalConfig = FinalConfig {
     reload_max_times: None,
     monitor_file: None,
     pid_file: None,
+    cpid_file: None,
     log_file: None,
     error_file: None,
     is_daemon: None,
@@ -32,6 +34,8 @@ struct Configuration {
     reload_max_times: Option<(usize, Span)>,
     monitor_file: Option<(String, Span)>,
     pid_file: Option<(String, Span)>,
+
+    cpid_file: Option<(String, Span)>,
     log_file: Option<(String, Span)>,
     error_file: Option<(String, Span)>,
     is_daemon: Option<(bool, Span)>,
@@ -81,6 +85,7 @@ impl Configuration {
             reload_max_times: None,
             monitor_file: None,
             pid_file: None,
+            cpid_file: None,
             log_file: None,
             error_file: None,
             is_daemon: None,
@@ -166,6 +171,27 @@ impl Configuration {
     }
 
 
+    fn set_cpid_file(
+        &mut self,
+        cpid_file: syn::Lit,
+        span: Span,
+    ) -> Result<(), syn::Error> {
+        if self.cpid_file.is_some() {
+            return Err(syn::Error::new(
+                span,
+                "`cpid_file` set multiple times.",
+            ));
+        }
+
+        let cpid_file = parse_string(cpid_file, span, "reload_max_times")?;
+        if cpid_file == String::new() {
+            return Err(syn::Error::new(span, "`cpid_file` may not be empty."));
+        }
+        self.cpid_file = Some((cpid_file, span));
+        Ok(())
+    }
+
+
     fn set_log_file(
         &mut self,
         log_file: syn::Lit,
@@ -230,6 +256,12 @@ impl Configuration {
             }
         };
 
+        let cpid_file = match &self.cpid_file {
+            None => None,
+            Some((value, _)) => {
+                Some(value.clone())
+            }
+        };
 
         let log_file = match &self.log_file {
             None => None,
@@ -257,6 +289,7 @@ impl Configuration {
             reload_max_times,
             monitor_file,
             pid_file,
+            cpid_file,
             log_file,
             error_file,
             is_daemon,
@@ -295,6 +328,12 @@ fn build_config(
                     }
                     "pid_file" => {
                         config.set_pid_file(
+                            namevalue.lit.clone(),
+                            syn::spanned::Spanned::span(&namevalue.lit),
+                        )?;
+                    }
+                    "cpid_file" => {
+                        config.set_cpid_file(
                             namevalue.lit.clone(),
                             syn::spanned::Spanned::span(&namevalue.lit),
                         )?;
@@ -354,6 +393,7 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
     let reload_max_times = config.reload_max_times.unwrap_or(9999999);
     let monitor_file_name = config.monitor_file.unwrap_or(String::new());
     let pid_file_name = config.pid_file.unwrap_or(String::new());
+    let cpid_file_name = config.cpid_file.unwrap_or(String::new());
     let is_daemon = config.is_daemon.unwrap_or(false);
     let body = &input.block;
     input.block = syn::parse2(quote_spanned! {last_stmt_end_span=>
@@ -362,9 +402,12 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
                 let command = ::commander::Commander::new()
                 .usage_desc("Forever Write by Rust")
                 .option("-ff, --FromForever [value]", "FromForever ", Some(false))
-                .option("-fs, --FromStatus [value]", "FromStatus ", None)
+                .option("-fstatus, --FromStatus [value]", "FromStatus ", None)
                 .option("-fd, --FromDaemon [value]", "FromDaemon ", None)
+                .option("-fstop, --FromStop [value]", "FromStop ", None)
                 .option_str("-fm, --monitor [value]", "monitor file change for update", None)
+                .option_str("-fp, --FromPid [value]", "pid file change for update", Some("forever.pid".to_string()))
+                .option_str("-fc, --FromCPid [value]", "child pid file change for update", Some("child_forever.pid".to_string()))
                 .helps(vec!["fh".to_string(), "forever-help".to_string()])
                 .versions(vec!["fv".to_string(), "forever-version".to_string()])
                 .after_desc("\n\n Forever run in rust\n\n")
@@ -374,56 +417,113 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
                 let mut is_daemon = #is_daemon;
                 let mut monitor_file = #monitor_file_name.to_string();
                 let mut pid_file = #pid_file_name.to_string();
+                let mut cpid_file = #cpid_file_name.to_string();
                 if let Some(monitor) = command.get_str("monitor") {
                     monitor_file = monitor;
                 }
-
+                if let Some(pid) = command.get_str("FromPid") {
+                    pid_file = pid;
+                }
+                if let Some(cpid) = command.get_str("FromCPid") {
+                    cpid_file = cpid;
+                }
                 if let Some(daemon) = command.get("FromDaemon") {
                     is_daemon = daemon;
                 }
 
-                if let Some(status) = command.get("FromStatus") {
-                    if pid_file == String::new() {
-                        panic!("unknown pid file!");
-                    }
-
+                fn get_file_content(filename: String) -> String {
                     use std::io::prelude::*;
-                    let mut file = ::std::fs::File::open(pid_file.to_string()).unwrap_or(
-                        {
-                            println!("pid file:'{}' no exist", pid_file);
-                            return
-                        }
-                    );
-                    let mut contents = String::new();
-                    file.read_to_string(&mut contents).expect("read pid file content failed");
+                    let mut file = ::std::fs::File::open(filename.to_string());
+                    if !file.is_ok() {
+                        // println!("pid file:'{}' no exist", filename);
+                        return String::new();
+                    }
+                    let mut file_content = String::new();
+                    file.unwrap().read_to_string(&mut file_content).expect("read pid file content failed");
+                    return file_content;
+                }
 
-
-                    let child = ::std::process::Command::new("ps")
-                                .args(["-p".to_string(), contents.clone()])
-                                // .stdin(::std::process::Stdio::inherit())
-                                // .stdout(::std::process::Stdio::inherit())
+                fn kill_process_by_id(id: String) -> Option<i32> {
+                    if id == String::new() {
+                        return Some(-1);
+                    }
+                    let mut child = if cfg!(target_os = "windows") {
+                        ::std::process::Command::new("kill")
                                 .output()
-                                .expect("failed to execute process");
+                                .expect("failed to execute process")
+                    } else {
+                        ::std::process::Command::new("kill")
+                                .args(["-TERM".to_string(), id.clone()])
+                                .output()
+                                .expect("failed to execute process")
+                    };
+                    println!("child = {:?}", child);
+                    return child.status.code();
+                }
+
+                if let Some(stop) = command.get("FromStop") {
+                    let pid_id = get_file_content(pid_file.clone());
+                    match kill_process_by_id(pid_id.clone()) {
+                        Some(0) => {
+                            ::std::fs::remove_file(pid_file).ok();
+                            println!("success close forever process:{}", pid_id);
+                        },
+                        Some(-1) => {
+                            println!("please run first");
+                            return;
+                        },
+                        _ => {
+                            ::std::fs::remove_file(pid_file).ok();
+                            println!("already close by other");
+                        }
+                    };
+
+                    let cpid_id = get_file_content(cpid_file.clone());
+                    match kill_process_by_id(cpid_id.clone()) {
+                        Some(0) => {
+                            ::std::fs::remove_file(cpid_file).ok();
+                            println!("success close forever process:{}", cpid_id);
+                        },
+                        Some(-1) => {
+                            return;
+                        },
+                        _ => {
+                            ::std::fs::remove_file(cpid_file).ok();
+                            println!("already close by other");
+                        }
+                    };
+                    return;
+                }
+
+
+                if let Some(status) = command.get("FromStatus") {
+                    let pid_id = get_file_content(pid_file.clone());
+
+                    let mut child = if cfg!(target_os = "windows") {
+                        ::std::process::Command::new(command.get_exec().unwrap())
+                                .output()
+                                .expect("failed to execute process")
+                    } else {
+                        ::std::process::Command::new("ps")
+                                .args(["-p".to_string(), pid_id.clone()])
+                                .output()
+                                .expect("failed to execute process")
+                    };
 
                     println!("hello == {:?}", child);
 
                     if child.status.code() != Some(0) {
-                        println!("{} is dead", contents);
+                        println!("{} is dead", pid_id);
                         return;
                     }
 
                     let content = String::from_utf8(child.stdout).unwrap();
-                    if let Some(_) = content.find(&contents) {
-                        println!("{} alive", contents);
+                    if let Some(_) = content.find(&pid_id) {
+                        println!("{} alive", pid_id);
                     } else {
-                        println!("{} is dead", contents);
+                        println!("{} is dead", pid_id);
                     }
                     return;
-
-                    // let pid = u32::from_str_radix(contents.as_str(), 10).expect("failed get pid file");
-                    // let child = ::std::process::Child::from(pid);
-
-                    // assert_eq!(contents, "Hello, world!");
                 }
 
                 if is_daemon {
@@ -444,7 +544,6 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
                 //     let mut list = command.get_all_args();
                 //     list.retain(|&value| value != String::new("FromDaemon") && value != String::new("fd"))
                 // }
-
     
                 if !command.get("FromForever").unwrap_or(false) {
                     if pid_file != String::new() {
@@ -476,6 +575,13 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
                                     .spawn()
                                     .expect("failed to execute process")
                         };
+
+
+                        if cpid_file != String::new() {
+                            use std::io::prelude::*;
+                            let mut file = ::std::fs::File::create(cpid_file.clone()).expect("create pid file failed");
+                            file.write_all(format!("{}", child.id()).as_ref()).expect("write error");
+                        }
     
                         loop {
                             match child.try_wait() {
@@ -497,13 +603,12 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
                                 }
                             } 
                         }
+
+                        ::std::fs::remove_file(cpid_file.clone()).ok();
                     }
 
                     if pid_file != String::new() {
                         ::std::fs::remove_file(pid_file).ok();
-                        // use std::io::prelude::*;
-                        // let mut file = ::std::fs::File::create(pid_file).expect("create pid file failed");
-                        // file.write_all(format!("{}", child.id()).as_ref()).expect("write error");
                     }
                     return
                 }
