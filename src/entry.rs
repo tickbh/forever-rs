@@ -13,18 +13,40 @@ fn token_stream_with_error(mut tokens: TokenStream, error: syn::Error) -> TokenS
 struct FinalConfig {
     reload_max_times: Option<usize>,
     monitor_file: Option<String>,
+    pid_file: Option<String>,
+    log_file: Option<String>,
+    error_file: Option<String>,
+    is_daemon: Option<bool>,
 }
 
 const DEFAULT_ERROR_CONFIG: FinalConfig = FinalConfig {
     reload_max_times: None,
     monitor_file: None,
+    pid_file: None,
+    log_file: None,
+    error_file: None,
+    is_daemon: None,
 };
 
 struct Configuration {
     reload_max_times: Option<(usize, Span)>,
     monitor_file: Option<(String, Span)>,
+    pid_file: Option<(String, Span)>,
+    log_file: Option<(String, Span)>,
+    error_file: Option<(String, Span)>,
+    is_daemon: Option<(bool, Span)>,
 }
 
+
+fn parse_bool(bool: syn::Lit, span: Span, field: &str) -> Result<bool, syn::Error> {
+    match bool {
+        syn::Lit::Bool(b) => Ok(b.value),
+        _ => Err(syn::Error::new(
+            span,
+            format!("Failed to parse value of `{}` as bool.", field),
+        )),
+    }
+}
 
 fn parse_int(int: syn::Lit, span: Span, field: &str) -> Result<usize, syn::Error> {
     match int {
@@ -58,6 +80,10 @@ impl Configuration {
         Configuration {
             reload_max_times: None,
             monitor_file: None,
+            pid_file: None,
+            log_file: None,
+            error_file: None,
+            is_daemon: None,
         }
     }
 
@@ -78,6 +104,23 @@ impl Configuration {
             return Err(syn::Error::new(span, "`reload_max_times` may not be 0."));
         }
         self.reload_max_times = Some((reload_max_times, span));
+        Ok(())
+    }
+
+    fn set_is_daemon(
+        &mut self,
+        is_daemon: syn::Lit,
+        span: Span,
+    ) -> Result<(), syn::Error> {
+        if self.is_daemon.is_some() {
+            return Err(syn::Error::new(
+                span,
+                "`is_daemon` set multiple times.",
+            ));
+        }
+
+        let is_daemon = parse_bool(is_daemon, span, "is_daemon")?;
+        self.is_daemon = Some((is_daemon, span));
         Ok(())
     }
     
@@ -101,6 +144,69 @@ impl Configuration {
         Ok(())
     }
 
+
+    fn set_pid_file(
+        &mut self,
+        pid_file: syn::Lit,
+        span: Span,
+    ) -> Result<(), syn::Error> {
+        if self.pid_file.is_some() {
+            return Err(syn::Error::new(
+                span,
+                "`pid_file` set multiple times.",
+            ));
+        }
+
+        let pid_file = parse_string(pid_file, span, "reload_max_times")?;
+        if pid_file == String::new() {
+            return Err(syn::Error::new(span, "`pid_file` may not be empty."));
+        }
+        self.pid_file = Some((pid_file, span));
+        Ok(())
+    }
+
+
+    fn set_log_file(
+        &mut self,
+        log_file: syn::Lit,
+        span: Span,
+    ) -> Result<(), syn::Error> {
+        if self.log_file.is_some() {
+            return Err(syn::Error::new(
+                span,
+                "`log_file` set multiple times.",
+            ));
+        }
+
+        let log_file = parse_string(log_file, span, "reload_max_times")?;
+        if log_file == String::new() {
+            return Err(syn::Error::new(span, "`log_file` may not be empty."));
+        }
+        self.log_file = Some((log_file, span));
+        Ok(())
+    }
+
+
+    fn set_error_file(
+        &mut self,
+        error_file: syn::Lit,
+        span: Span,
+    ) -> Result<(), syn::Error> {
+        if self.error_file.is_some() {
+            return Err(syn::Error::new(
+                span,
+                "`error_file` set multiple times.",
+            ));
+        }
+
+        let error_file = parse_string(error_file, span, "reload_max_times")?;
+        if error_file == String::new() {
+            return Err(syn::Error::new(span, "`error_file` may not be empty."));
+        }
+        self.error_file = Some((error_file, span));
+        Ok(())
+    }
+
     fn build(&self) -> Result<FinalConfig, syn::Error> {
         let reload_max_times = match self.reload_max_times {
             None => None,
@@ -116,9 +222,44 @@ impl Configuration {
             }
         };
 
+
+        let pid_file = match &self.pid_file {
+            None => None,
+            Some((value, _)) => {
+                Some(value.clone())
+            }
+        };
+
+
+        let log_file = match &self.log_file {
+            None => None,
+            Some((value, _)) => {
+                Some(value.clone())
+            }
+        };
+
+
+        let error_file = match &self.error_file {
+            None => None,
+            Some((value, _)) => {
+                Some(value.clone())
+            }
+        };
+
+        let is_daemon = match &self.is_daemon {
+            None => None,
+            Some((value, _)) => {
+                Some(value.clone())
+            }
+        };
+
         Ok(FinalConfig {
             reload_max_times,
             monitor_file,
+            pid_file,
+            log_file,
+            error_file,
+            is_daemon,
         })
     }
 }
@@ -152,6 +293,30 @@ fn build_config(
                             syn::spanned::Spanned::span(&namevalue.lit),
                         )?;
                     }
+                    "pid_file" => {
+                        config.set_pid_file(
+                            namevalue.lit.clone(),
+                            syn::spanned::Spanned::span(&namevalue.lit),
+                        )?;
+                    }
+                    "log_file" => {
+                        config.set_log_file(
+                            namevalue.lit.clone(),
+                            syn::spanned::Spanned::span(&namevalue.lit),
+                        )?;
+                    }
+                    "error_file" => {
+                        config.set_error_file(
+                            namevalue.lit.clone(),
+                            syn::spanned::Spanned::span(&namevalue.lit),
+                        )?;
+                    }
+                    "daemon" => {
+                        config.set_is_daemon(
+                            namevalue.lit.clone(),
+                            syn::spanned::Spanned::span(&namevalue.lit),
+                        )?;
+                    }
                     name => {
                         let msg = format!(
                             "Unknown attribute {} is specified; expected one of: `flavor`, `reload_max_times`, `start_paused`",
@@ -173,7 +338,6 @@ fn build_config(
     config.build()
 }
 
-
 fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
     let (_last_stmt_start_span, last_stmt_end_span) = {
         let mut last_stmt = input
@@ -189,15 +353,17 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
     };
     let reload_max_times = config.reload_max_times.unwrap_or(9999999);
     let monitor_file_name = config.monitor_file.unwrap_or(String::new());
+    let pid_file_name = config.pid_file.unwrap_or(String::new());
+    let is_daemon = config.is_daemon.unwrap_or(false);
     let body = &input.block;
-    
-
     input.block = syn::parse2(quote_spanned! {last_stmt_end_span=>
         {   
             {
                 let command = ::commander::Commander::new()
                 .usage_desc("Forever Write by Rust")
-                .option("-ff, --fromforever [value]", "fromforever ", Some(false))
+                .option("-ff, --FromForever [value]", "FromForever ", Some(false))
+                .option("-fs, --FromStatus [value]", "FromStatus ", None)
+                .option("-fd, --FromDaemon [value]", "FromDaemon ", None)
                 .option_str("-fm, --monitor [value]", "monitor file change for update", None)
                 .helps(vec!["fh".to_string(), "forever-help".to_string()])
                 .versions(vec!["fv".to_string(), "forever-version".to_string()])
@@ -205,14 +371,89 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
                 .parse_env_or_exit();
     
                 let mut reload_left_times = #reload_max_times;
+                let mut is_daemon = #is_daemon;
                 let mut monitor_file = #monitor_file_name.to_string();
+                let mut pid_file = #pid_file_name.to_string();
                 if let Some(monitor) = command.get_str("monitor") {
                     monitor_file = monitor;
                 }
-    
-                if !command.get("fromforever").unwrap_or(false) {
+
+                if let Some(daemon) = command.get("FromDaemon") {
+                    is_daemon = daemon;
+                }
+
+                if let Some(status) = command.get("FromStatus") {
+                    if pid_file == String::new() {
+                        panic!("unknown pid file!");
+                    }
+
+                    use std::io::prelude::*;
+                    let mut file = ::std::fs::File::open(pid_file.to_string()).unwrap_or(
+                        {
+                            println!("pid file:'{}' no exist", pid_file);
+                            return
+                        }
+                    );
+                    let mut contents = String::new();
+                    file.read_to_string(&mut contents).expect("read pid file content failed");
+
+
+                    let child = ::std::process::Command::new("ps")
+                                .args(["-p".to_string(), contents.clone()])
+                                // .stdin(::std::process::Stdio::inherit())
+                                // .stdout(::std::process::Stdio::inherit())
+                                .output()
+                                .expect("failed to execute process");
+
+                    println!("hello == {:?}", child);
+
+                    if child.status.code() != Some(0) {
+                        println!("{} is dead", contents);
+                        return;
+                    }
+
+                    let content = String::from_utf8(child.stdout).unwrap();
+                    if let Some(_) = content.find(&contents) {
+                        println!("{} alive", contents);
+                    } else {
+                        println!("{} is dead", contents);
+                    }
+                    return;
+
+                    // let pid = u32::from_str_radix(contents.as_str(), 10).expect("failed get pid file");
+                    // let child = ::std::process::Child::from(pid);
+
+                    // assert_eq!(contents, "Hello, world!");
+                }
+
+                if is_daemon {
+                    println!("is_daemon!!!!");
                     let mut list = command.get_all_args();
-                    list.push("--fromforever".to_string());
+                    list.push("--FromDaemon".to_string());
+                    list.push("false".to_string());
+                    let child = ::std::process::Command::new(command.get_exec().unwrap())
+                                .args(list.clone())
+                                .stdin(::std::process::Stdio::inherit())
+                                .stdout(::std::process::Stdio::inherit())
+                                .spawn()
+                                .expect("failed to execute process");
+                    return;
+                }
+
+                // if command.get("FromDaemon").unwrap_or(false) {
+                //     let mut list = command.get_all_args();
+                //     list.retain(|&value| value != String::new("FromDaemon") && value != String::new("fd"))
+                // }
+
+    
+                if !command.get("FromForever").unwrap_or(false) {
+                    if pid_file != String::new() {
+                        use std::io::prelude::*;
+                        let mut file = ::std::fs::File::create(pid_file.clone()).expect("create pid file failed");
+                        file.write_all(format!("{}", ::std::process::id()).as_ref()).expect("write error");
+                    }
+                    let mut list = command.get_all_args();
+                    list.push("--FromForever".to_string());
                     loop {
                         reload_left_times-=1;
                         if reload_left_times <= 0 {
@@ -223,14 +464,14 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
                         let mut child = if cfg!(target_os = "windows") {
                             ::std::process::Command::new(command.get_exec().unwrap())
                                     .args(list.clone())
-                                    .stdin(::std::process::Stdio::null())
+                                    .stdin(::std::process::Stdio::inherit())
                                     .stdout(::std::process::Stdio::inherit())
                                     .spawn()
                                     .expect("failed to execute process")
                         } else {
                             ::std::process::Command::new(command.get_exec().unwrap())
                                     .args(list.clone())
-                                    .stdin(::std::process::Stdio::null())
+                                    .stdin(::std::process::Stdio::inherit())
                                     .stdout(::std::process::Stdio::inherit())
                                     .spawn()
                                     .expect("failed to execute process")
@@ -256,6 +497,13 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
                                 }
                             } 
                         }
+                    }
+
+                    if pid_file != String::new() {
+                        ::std::fs::remove_file(pid_file).ok();
+                        // use std::io::prelude::*;
+                        // let mut file = ::std::fs::File::create(pid_file).expect("create pid file failed");
+                        // file.write_all(format!("{}", child.id()).as_ref()).expect("write error");
                     }
                     return
                 }
