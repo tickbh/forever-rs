@@ -141,7 +141,7 @@ impl Configuration {
             ));
         }
 
-        let monitor_file = parse_string(monitor_file, span, "reload_max_times")?;
+        let monitor_file = parse_string(monitor_file, span, "monitor_file")?;
         if monitor_file == String::new() {
             return Err(syn::Error::new(span, "`monitor_file` may not be empty."));
         }
@@ -162,7 +162,7 @@ impl Configuration {
             ));
         }
 
-        let pid_file = parse_string(pid_file, span, "reload_max_times")?;
+        let pid_file = parse_string(pid_file, span, "pid_file")?;
         if pid_file == String::new() {
             return Err(syn::Error::new(span, "`pid_file` may not be empty."));
         }
@@ -183,7 +183,7 @@ impl Configuration {
             ));
         }
 
-        let cpid_file = parse_string(cpid_file, span, "reload_max_times")?;
+        let cpid_file = parse_string(cpid_file, span, "cpid_file")?;
         if cpid_file == String::new() {
             return Err(syn::Error::new(span, "`cpid_file` may not be empty."));
         }
@@ -204,7 +204,7 @@ impl Configuration {
             ));
         }
 
-        let log_file = parse_string(log_file, span, "reload_max_times")?;
+        let log_file = parse_string(log_file, span, "log_file")?;
         if log_file == String::new() {
             return Err(syn::Error::new(span, "`log_file` may not be empty."));
         }
@@ -225,7 +225,7 @@ impl Configuration {
             ));
         }
 
-        let error_file = parse_string(error_file, span, "reload_max_times")?;
+        let error_file = parse_string(error_file, span, "error_file")?;
         if error_file == String::new() {
             return Err(syn::Error::new(span, "`error_file` may not be empty."));
         }
@@ -405,14 +405,15 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
                 .option("-fstatus, --FromStatus [value]", "FromStatus ", None)
                 .option("-fdamon, --FromDaemon [value]", "FromDaemon ", None)
                 .option("-fstop, --FromStop [value]", "FromStop ", None)
-                .option_str("-fmonotor, --monitor [value]", "monitor file change for update", None)
+                .option_str("-fmonitor, --monitor [value]", "monitor file change for update", None)
                 .option_str("-fpid, --FromPid [value]", "pid file change for update", Some("forever.pid".to_string()))
                 .option_str("-fcpid, --FromCPid [value]", "child pid file change for update", Some("child_forever.pid".to_string()))
                 .helps(vec!["fh".to_string(), "forever-help".to_string()])
                 .versions(vec!["fv".to_string(), "forever-version".to_string()])
                 .after_desc("\n\n Forever run in rust\n\n")
                 .parse_env_or_exit();
-    
+                
+                let mut is_ok_exit = false;
                 let mut reload_left_times = #reload_max_times;
                 let mut is_daemon = #is_daemon;
                 let mut monitor_file = #monitor_file_name.to_string();
@@ -527,7 +528,6 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
                 }
 
                 if is_daemon {
-                    println!("is_daemon!!!!");
                     let mut list = command.get_all_args();
                     list.push("--FromDaemon".to_string());
                     list.push("false".to_string());
@@ -555,7 +555,7 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
                     list.push("--FromForever".to_string());
                     loop {
                         reload_left_times-=1;
-                        if reload_left_times <= 0 {
+                        if reload_left_times <= 0 || is_ok_exit {
                             break
                         }
     
@@ -585,7 +585,13 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
     
                         loop {
                             match child.try_wait() {
-                                Ok(Some(status)) => {println!("exited with: {}", status);break;},
+                                Ok(Some(status)) => {
+                                    println!("exited with: {}", status);
+                                    if status.success() {
+                                        is_ok_exit = true;
+                                    }
+                                    break;
+                                },
                                 Ok(None) => {
                                 }
                                 Err(e) => {println!("error attempting to wait: {}", e); break;},

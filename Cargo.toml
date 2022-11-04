@@ -1,11 +1,11 @@
 [package]
 name = "forever-rs"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["tickbh <tickdream125@hotmail.com>"]
 description = "The complete solution for Rust command-line interfaces"
-repository = "https://github.com/tickbh/Commander"
-homepage = "https://github.com/tickbh/Commander"
+repository = "https://github.com/tickbh/forever-rs"
+homepage = "https://github.com/tickbh/forever-rs"
 license = "MIT/Apache-2.0"
 keywords = ["forever", "forever-rs"]
 
