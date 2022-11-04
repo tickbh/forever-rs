@@ -6,7 +6,7 @@
 // use std::fs::File;
 // use std::io::prelude::*;
 
-#[forever_rs::main(monitor_file="Cargo.lock", max_times=6, daemon=true, pid_file="forever.pid")]
+#[forever_rs::main(monitor_file="Cargo.lock", max_times=6, daemon=false, pid_file="forever.pid")]
 fn main() {
     println!("Hello, world!");
 
