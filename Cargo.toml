@@ -1,6 +1,6 @@
 [package]
 name = "forever-rs"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 authors = ["tickbh <tickdream125@hotmail.com>"]
 description = "The complete solution for Rust command-line interfaces"
@@ -18,3 +18,4 @@ proc-macro2 = "1.0.7"
 quote = "1"
 syn = { version = "1.0.90", features = ["full"] }
 commander = "0.1.5"
+log = "0.4.17"

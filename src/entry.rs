@@ -1,3 +1,4 @@
+
 use proc_macro::TokenStream;
 use proc_macro2::{Span};
 
@@ -399,11 +400,12 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
     input.block = syn::parse2(quote_spanned! {last_stmt_end_span=>
         {   
             {
+                use log::{trace, warn};
                 let command = ::commander::Commander::new()
                 .usage_desc("Forever Write by Rust")
                 .option("-fforever, --FromForever [value]", "FromForever ", Some(false))
                 .option("-fstatus, --FromStatus [value]", "FromStatus ", None)
-                .option("-fdamon, --FromDaemon [value]", "FromDaemon ", None)
+                .option("-fdaemon, --FromDaemon [value]", "FromDaemon ", None)
                 .option("-fstop, --FromStop [value]", "FromStop ", None)
                 .option_str("-fmonitor, --monitor [value]", "monitor file change for update", None)
                 .option_str("-fpid, --FromPid [value]", "pid file change for update", Some("forever.pid".to_string()))
@@ -434,9 +436,9 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
 
                 fn get_file_content(filename: String) -> String {
                     use std::io::prelude::*;
-                    let mut file = ::std::fs::File::open(filename.to_string());
+                    let file = ::std::fs::File::open(filename.to_string());
                     if !file.is_ok() {
-                        // println!("pid file:'{}' no exist", filename);
+                        // trace!("pid file:'{}' no exist", filename);
                         return String::new();
                     }
                     let mut file_content = String::new();
@@ -448,7 +450,7 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
                     if id == String::new() {
                         return Some(-1);
                     }
-                    let mut child = if cfg!(target_os = "windows") {
+                    let child = if cfg!(target_os = "windows") {
                         ::std::process::Command::new("kill")
                                 .output()
                                 .expect("failed to execute process")
@@ -458,24 +460,23 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
                                 .output()
                                 .expect("failed to execute process")
                     };
-                    println!("child = {:?}", child);
                     return child.status.code();
                 }
 
-                if let Some(stop) = command.get("FromStop") {
+                if let Some(_stop) = command.get("FromStop") {
                     let pid_id = get_file_content(pid_file.clone());
                     match kill_process_by_id(pid_id.clone()) {
                         Some(0) => {
                             ::std::fs::remove_file(pid_file).ok();
-                            println!("success close forever process:{}", pid_id);
+                            trace!("success close forever process:{}", pid_id);
                         },
                         Some(-1) => {
-                            println!("please run first");
+                            trace!("please run first");
                             return;
                         },
                         _ => {
                             ::std::fs::remove_file(pid_file).ok();
-                            println!("already close by other");
+                            trace!("already close by other");
                         }
                     };
 
@@ -483,24 +484,24 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
                     match kill_process_by_id(cpid_id.clone()) {
                         Some(0) => {
                             ::std::fs::remove_file(cpid_file).ok();
-                            println!("success close forever process:{}", cpid_id);
+                            trace!("success close forever process:{}", cpid_id);
                         },
                         Some(-1) => {
                             return;
                         },
                         _ => {
                             ::std::fs::remove_file(cpid_file).ok();
-                            println!("already close by other");
+                            trace!("already close by other");
                         }
                     };
                     return;
                 }
 
 
-                if let Some(status) = command.get("FromStatus") {
+                if let Some(_status) = command.get("FromStatus") {
                     let pid_id = get_file_content(pid_file.clone());
 
-                    let mut child = if cfg!(target_os = "windows") {
+                    let child = if cfg!(target_os = "windows") {
                         ::std::process::Command::new(command.get_exec().unwrap())
                                 .output()
                                 .expect("failed to execute process")
@@ -510,8 +511,6 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
                                 .output()
                                 .expect("failed to execute process")
                     };
-
-                    println!("hello == {:?}", child);
 
                     if child.status.code() != Some(0) {
                         println!("{} is dead", pid_id);
@@ -531,7 +530,7 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
                     let mut list = command.get_all_args();
                     list.push("--FromDaemon".to_string());
                     list.push("false".to_string());
-                    let child = ::std::process::Command::new(command.get_exec().unwrap())
+                    let _child = ::std::process::Command::new(command.get_exec().unwrap())
                                 .args(list.clone())
                                 .stdin(::std::process::Stdio::inherit())
                                 .stdout(::std::process::Stdio::inherit())
@@ -586,7 +585,7 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
                         loop {
                             match child.try_wait() {
                                 Ok(Some(status)) => {
-                                    println!("exited with: {}", status);
+                                    warn!("exited with: {}", status);
                                     if status.success() {
                                         is_ok_exit = true;
                                     }
@@ -594,7 +593,7 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
                                 },
                                 Ok(None) => {
                                 }
-                                Err(e) => {println!("error attempting to wait: {}", e); break;},
+                                Err(e) => {warn!("error attempting to wait: {}", e); break;},
                             }
                             ::std::thread::sleep(::std::time::Duration::from_millis(1000));
                             if monitor_file != String::new() {
@@ -618,7 +617,7 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
                     }
                     return
                 }
-            }
+            };
 
             #body
         }
