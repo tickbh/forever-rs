@@ -10,8 +10,9 @@
 fn main() {
     println!("Hello, world!");
 
-    loop {
-        ::std::thread::sleep(::std::time::Duration::from_millis(1000));
-    }
+    panic!("fuck");
+    // loop {
+    //     ::std::thread::sleep(::std::time::Duration::from_millis(1000));
+    // }
 }
 

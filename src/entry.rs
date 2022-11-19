@@ -399,11 +399,13 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
     let body = &input.block;
     input.block = syn::parse2(quote_spanned! {last_stmt_end_span=>
         {   
-            {
+            
+            loop {
                 use log::{trace, warn};
                 let command = ::commander::Commander::new()
                 .usage_desc("Forever Write by Rust")
                 .option("-fforever, --FromForever [value]", "FromForever ", Some(false))
+                .option("-df, --DisableForever [value]", "DisableForever ", Some(false))
                 .option("-fstatus, --FromStatus [value]", "FromStatus ", None)
                 .option("-fdaemon, --FromDaemon [value]", "FromDaemon ", None)
                 .option("-fstop, --FromStop [value]", "FromStop ", None)
@@ -415,6 +417,11 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
                 .after_desc("\n\n Forever run in rust\n\n")
                 .parse_env_or_exit();
                 
+                let is_disable_forever = command.get("df").unwrap();
+                if is_disable_forever {
+                    break;
+                }
+
                 let mut is_ok_exit = false;
                 let mut reload_left_times = #reload_max_times;
                 let mut is_daemon = #is_daemon;
@@ -617,7 +624,8 @@ fn parse_knobs(mut input: syn::ItemFn, config: FinalConfig) -> TokenStream {
                     }
                     return
                 }
-            };
+                break;
+            }
 
             #body
         }
